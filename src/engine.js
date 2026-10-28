@@ -380,6 +380,10 @@ function dshiwCreateSplash(host, options) {
   var whalePts = null, whaleJumps = null;
   var strokes = null, stTotal = 0, stCount = 0, writeDur = 4, inkPx = 150;
   var revLen = null, maskReset = true, revealedCost = 0;
+  /* buildInkCanvas 是初始化里最重的一步（实测单次约 245ms）。
+     buildText 只做排版与笔画数据，真正画离屏墨迹推迟到首帧之后，
+     这样开屏背景能先亮起来，用户不用对着空屏等。 */
+  var inkReady = false, inkArgs = null;
 
   /* ---------------- 时间轴 ---------------- */
   var T0 = 0.78, W_START = 1.0, W_END = 6.1, PEN_OUT = 6.62, FADE_S = 7.62, FADE_E = 8.42,
@@ -535,7 +539,15 @@ function dshiwCreateSplash(host, options) {
     stCount = list.length;
     writeDur = dshiwClamp(total / (px * 2.15) + stCount * 0.035, 2.6, 6.4);
     maskReset = true;
-    buildInkCanvas(L, ox, oy, px, fbs);
+    inkArgs = { L: L, ox: ox, oy: oy, px: px, fbs: fbs };
+    inkReady = false;
+  }
+
+  /* 首帧之后的重量级初始化：把笔画光晕 / 本体刷进离屏画布。 */
+  function buildInk() {
+    if (inkReady || !inkArgs) return;
+    buildInkCanvas(inkArgs.L, inkArgs.ox, inkArgs.oy, inkArgs.px, inkArgs.fbs);
+    inkReady = true;
   }
 
   /* ---------------- 逐帧显影 ---------------- */
@@ -635,7 +647,7 @@ function dshiwCreateSplash(host, options) {
   }
 
   function drawText(t) {
-    if (!strokes) return;
+    if (!strokes || !inkReady) return;
     if (maskReset) resetInk();
     var target = revealCost(t);
     if (target < revealedCost - 0.5) resetInk();
@@ -870,15 +882,21 @@ function dshiwCreateSplash(host, options) {
   function start() {
     prepare();
     if (reduce) {
+      buildInk();
       render(Math.min(SUB_E + 1.0, STOP_T));
       skipEl.classList.remove('is-visible');
       doneTimer = setTimeout(finish, 2600);
       return;
     }
+    /* 首帧只画背景与锁标：背景先亮，重量级的离屏墨迹让给下一帧。
+       起表时刻同步推到墨迹画好之后，否则前几百毫秒的字迹会被丢掉。 */
     render(0);
-    startedAt = performance.now();
-    running = true;
-    raf = requestAnimationFrame(tick);
+    raf = requestAnimationFrame(function () {
+      buildInk();
+      startedAt = performance.now();
+      running = true;
+      raf = requestAnimationFrame(tick);
+    });
     skipTimer = setTimeout(function () { skipEl.classList.add('is-visible'); }, 1300);
   }
 
@@ -890,6 +908,7 @@ function dshiwCreateSplash(host, options) {
     if (!SKIP_WHALE && lastT < SUB_E) {
       if (raf) cancelAnimationFrame(raf);
       running = false;
+      buildInk();
       render(SUB_E + 0.35);
     }
     finish();
@@ -897,6 +916,7 @@ function dshiwCreateSplash(host, options) {
 
   function seek(t) {
     prepare();
+    buildInk();
     if (raf) cancelAnimationFrame(raf);
     running = false;
     render(dshiwClamp(t, 0, END));
