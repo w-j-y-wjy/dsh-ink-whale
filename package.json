@@ -1,6 +1,6 @@
 {
   "name": "dsh-ink-whale",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "DeepSeek Harness 手写墨迹开屏插件：按真实笔顺写出你的文字，收在鲸鱼锁标上；字体、文字与深浅色都在设置里配置。",
   "type": "module",
   "license": "MIT",
